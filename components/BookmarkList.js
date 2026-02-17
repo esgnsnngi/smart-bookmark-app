@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 
 export default function BookmarkList({ user }) {
@@ -9,105 +9,82 @@ export default function BookmarkList({ user }) {
   const [loading, setLoading] = useState(true)
   const [adding, setAdding] = useState(false)
   const [deletingId, setDeletingId] = useState(null)
+  const [error, setError] = useState(null)
 
-  useEffect(() => {
-    fetchBookmarks()
+  const fetchBookmarks = useCallback(async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      const { data, error } = await supabase
+        .from('bookmarks')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
 
-    const channel = supabase
-      .channel('bookmarks-changes')
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'bookmarks',
-          filter: `user_id=eq.${user.id}`
-        },
-        (payload) => {
-          console.log('Real-time update:', payload)
-
-          if (payload.eventType === 'INSERT') {
-            setBookmarks(prev => [payload.new, ...prev])
-          } else if (payload.eventType === 'DELETE') {
-            setBookmarks(prev => prev.filter(b => b.id !== payload.old.id))
-          } else if (payload.eventType === 'UPDATE') {
-            setBookmarks(prev => prev.map(b => b.id === payload.new.id ? payload.new : b))
-          }
-        }
-      )
-      .subscribe()
-
-    return () => {
-      supabase.removeChannel(channel)
+      if (error) throw error
+      setBookmarks(data || [])
+    } catch (err) {
+      console.error('Error fetching bookmarks:', err)
+      setError('Failed to load bookmarks. Please refresh.')
+    } finally {
+      setLoading(false)
     }
   }, [user.id])
 
-  const fetchBookmarks = async () => {
-    setLoading(true)
-    const { data, error } = await supabase
-      .from('bookmarks')
-      .select('*')
-      .eq('user_id', user.id)
-      .order('created_at', { ascending: false })
-
-    if (error) {
-      console.error('Error fetching bookmarks:', error)
-    } else {
-      setBookmarks(data || [])
-    }
-    setLoading(false)
-  }
+  useEffect(() => {
+    fetchBookmarks()
+  }, [fetchBookmarks])
 
   const addBookmark = async (e) => {
     e.preventDefault()
-
     if (!newBookmark.url || !newBookmark.title) {
       alert('Please fill in both URL and title')
       return
     }
 
     setAdding(true)
-    const { error } = await supabase
-      .from('bookmarks')
-      .insert([
-        {
+    try {
+      const { data, error } = await supabase
+        .from('bookmarks')
+        .insert([{
           user_id: user.id,
           url: newBookmark.url,
           title: newBookmark.title
-        }
-      ])
+        }])
+        .select()
 
-    if (error) {
-      console.error('Error adding bookmark:', error)
-      alert('Failed to add bookmark')
-    } else {
+      if (error) throw error
+
+      if (data && data.length > 0) {
+        setBookmarks(prev => [data[0], ...prev])
+      }
       setNewBookmark({ url: '', title: '' })
+    } catch (err) {
+      console.error('Error adding bookmark:', err)
+      alert('Failed to add bookmark: ' + err.message)
+    } finally {
+      setAdding(false)
     }
-    setAdding(false)
   }
 
   const deleteBookmark = async (id) => {
     setDeletingId(id)
+    try {
+      const { error } = await supabase
+        .from('bookmarks')
+        .delete()
+        .eq('id', id)
+        .eq('user_id', user.id)
 
-    const { data, error } = await supabase
-      .from('bookmarks')
-      .delete()
-      .eq('id', id)
-      .eq('user_id', user.id)
-      .select()
+      if (error) throw error
 
-    console.log('Delete result:', data)
-    console.log('Delete error:', error)
-
-    if (error) {
-      console.error('Error deleting bookmark:', error)
-      alert(`Failed to delete bookmark: ${error.message}`)
-    } else {
-      // Manually update state in case realtime doesn't catch it
       setBookmarks(prev => prev.filter(b => b.id !== id))
+    } catch (err) {
+      console.error('Error deleting bookmark:', err)
+      alert('Failed to delete bookmark: ' + err.message)
+    } finally {
+      setDeletingId(null)
     }
-
-    setDeletingId(null)
   }
 
   const handleSignOut = async () => {
@@ -117,6 +94,7 @@ export default function BookmarkList({ user }) {
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 py-8 px-4">
       <div className="max-w-4xl mx-auto">
+
         {/* Header */}
         <div className="bg-white rounded-2xl shadow-xl p-6 mb-6">
           <div className="flex justify-between items-center">
@@ -150,9 +128,9 @@ export default function BookmarkList({ user }) {
               <input
                 type="text"
                 value={newBookmark.title}
-                onChange={(e) => setNewBookmark({ ...newBookmark, title: e.target.value })}
+                onChange={(e) => setNewBookmark(prev => ({ ...prev, title: e.target.value }))}
                 placeholder="My Awesome Website"
-                className="input-field"
+                className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 required
               />
             </div>
@@ -163,21 +141,34 @@ export default function BookmarkList({ user }) {
               <input
                 type="url"
                 value={newBookmark.url}
-                onChange={(e) => setNewBookmark({ ...newBookmark, url: e.target.value })}
+                onChange={(e) => setNewBookmark(prev => ({ ...prev, url: e.target.value }))}
                 placeholder="https://example.com"
-                className="input-field"
+                className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 required
               />
             </div>
             <button
               type="submit"
               disabled={adding}
-              className="btn-primary w-full disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {adding ? 'Adding...' : 'Add Bookmark'}
             </button>
           </form>
         </div>
+
+        {/* Error Message */}
+        {error && (
+          <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-lg mb-6">
+            {error}
+            <button
+              onClick={fetchBookmarks}
+              className="ml-4 underline font-semibold"
+            >
+              Retry
+            </button>
+          </div>
+        )}
 
         {/* Bookmarks List */}
         <div className="space-y-4">
@@ -188,7 +179,6 @@ export default function BookmarkList({ user }) {
             </div>
           ) : bookmarks.length === 0 ? (
             <div className="bg-white rounded-2xl shadow-xl p-12 text-center">
-              <p className="text-2xl mb-2">📭</p>
               <p className="text-gray-600 text-lg">No bookmarks yet!</p>
               <p className="text-gray-500 text-sm mt-2">Add your first bookmark above</p>
             </div>
@@ -201,7 +191,10 @@ export default function BookmarkList({ user }) {
               </div>
 
               {bookmarks.map((bookmark) => (
-                <div key={bookmark.id} className="bookmark-card">
+                <div
+                  key={bookmark.id}
+                  className="bg-white rounded-2xl shadow-xl p-6"
+                >
                   <div className="flex justify-between items-start">
                     <div className="flex-1 min-w-0">
                       <h3 className="text-lg font-semibold text-gray-800 mb-1 truncate">
@@ -223,10 +216,9 @@ export default function BookmarkList({ user }) {
                     <button
                       onClick={() => deleteBookmark(bookmark.id)}
                       disabled={deletingId === bookmark.id}
-                      className="btn-danger ml-4 flex-shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
-                      title="Delete bookmark"
+                      className="bg-red-500 hover:bg-red-600 text-white font-semibold py-2 px-4 rounded-lg ml-4 flex-shrink-0 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                     >
-                      {deletingId === bookmark.id ? '...' : 'Delete'}
+                      {deletingId === bookmark.id ? 'Deleting...' : 'Delete'}
                     </button>
                   </div>
                 </div>
