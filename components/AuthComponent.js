@@ -4,6 +4,10 @@ import { ThemeSupa } from '@supabase/auth-ui-shared'
 import { supabase } from '@/lib/supabase'
 
 export default function AuthComponent() {
+  const redirectTo = typeof window !== 'undefined'
+    ? `${window.location.origin}/auth/callback`
+    : 'http://localhost:3000/auth/callback'
+
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100">
       <div className="bg-white p-8 rounded-2xl shadow-2xl w-full max-w-md">
@@ -26,7 +30,7 @@ export default function AuthComponent() {
           }}
           providers={['google']}
           onlyThirdPartyProviders={true}
-          redirectTo="https://smart-bookmark-app-blush-eight.vercel.app/auth/callback"
+          redirectTo={redirectTo}
         />
       </div>
     </div>

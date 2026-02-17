@@ -9,31 +9,35 @@ export default function Home() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    // Set a timeout to prevent infinite loading
-    const timeout = setTimeout(() => {
-      setLoading(false)
-    }, 3000)
+    // Check for session in URL hash (for implicit flow)
+    const hashParams = new URLSearchParams(
+      window.location.hash.substring(1)
+    )
+    const accessToken = hashParams.get('access_token')
 
-    supabase.auth.getSession().then(({ data: { session }, error }) => {
-      clearTimeout(timeout)
-      console.log('Session:', session)
-      console.log('Error:', error)
-      setSession(session)
-      setLoading(false)
-    }).catch((err) => {
-      clearTimeout(timeout)
-      console.error('Failed to get session:', err)
-      setLoading(false)
-    })
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session)
-    })
-
-    return () => {
-      subscription.unsubscribe()
-      clearTimeout(timeout)
+    if (accessToken) {
+      // Session is in URL, Supabase will handle it
+      supabase.auth.getSession().then(({ data: { session } }) => {
+        setSession(session)
+        setLoading(false)
+        // Clean up URL
+        window.history.replaceState({}, document.title, window.location.pathname)
+      })
+    } else {
+      supabase.auth.getSession().then(({ data: { session } }) => {
+        setSession(session)
+        setLoading(false)
+      })
     }
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      console.log('Auth event:', event)
+      console.log('Session:', session)
+      setSession(session)
+      setLoading(false)
+    })
+
+    return () => subscription.unsubscribe()
   }, [])
 
   if (loading) {
