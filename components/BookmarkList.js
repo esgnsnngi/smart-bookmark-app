@@ -8,12 +8,11 @@ export default function BookmarkList({ user }) {
   const [newBookmark, setNewBookmark] = useState({ url: '', title: '' })
   const [loading, setLoading] = useState(true)
   const [adding, setAdding] = useState(false)
+  const [deletingId, setDeletingId] = useState(null)
 
-  // Fetch bookmarks on component mount
   useEffect(() => {
     fetchBookmarks()
-    
-    // Set up real-time subscription
+
     const channel = supabase
       .channel('bookmarks-changes')
       .on(
@@ -26,7 +25,7 @@ export default function BookmarkList({ user }) {
         },
         (payload) => {
           console.log('Real-time update:', payload)
-          
+
           if (payload.eventType === 'INSERT') {
             setBookmarks(prev => [payload.new, ...prev])
           } else if (payload.eventType === 'DELETE') {
@@ -61,7 +60,7 @@ export default function BookmarkList({ user }) {
 
   const addBookmark = async (e) => {
     e.preventDefault()
-    
+
     if (!newBookmark.url || !newBookmark.title) {
       alert('Please fill in both URL and title')
       return
@@ -88,15 +87,27 @@ export default function BookmarkList({ user }) {
   }
 
   const deleteBookmark = async (id) => {
-    const { error } = await supabase
+    setDeletingId(id)
+
+    const { data, error } = await supabase
       .from('bookmarks')
       .delete()
       .eq('id', id)
+      .eq('user_id', user.id)
+      .select()
+
+    console.log('Delete result:', data)
+    console.log('Delete error:', error)
 
     if (error) {
       console.error('Error deleting bookmark:', error)
-      alert('Failed to delete bookmark')
+      alert(`Failed to delete bookmark: ${error.message}`)
+    } else {
+      // Manually update state in case realtime doesn't catch it
+      setBookmarks(prev => prev.filter(b => b.id !== id))
     }
+
+    setDeletingId(null)
   }
 
   const handleSignOut = async () => {
@@ -111,7 +122,7 @@ export default function BookmarkList({ user }) {
           <div className="flex justify-between items-center">
             <div>
               <h1 className="text-3xl font-bold text-gray-800 mb-1">
-                📚 My Bookmarks
+                My Bookmarks
               </h1>
               <p className="text-gray-600">
                 Logged in as {user.email}
@@ -129,7 +140,7 @@ export default function BookmarkList({ user }) {
         {/* Add Bookmark Form */}
         <div className="bg-white rounded-2xl shadow-xl p-6 mb-6">
           <h2 className="text-xl font-bold text-gray-800 mb-4">
-            ➕ Add New Bookmark
+            Add New Bookmark
           </h2>
           <form onSubmit={addBookmark} className="space-y-4">
             <div>
@@ -188,7 +199,7 @@ export default function BookmarkList({ user }) {
                   <span className="font-semibold">{bookmarks.length}</span> bookmark{bookmarks.length !== 1 ? 's' : ''} saved
                 </p>
               </div>
-              
+
               {bookmarks.map((bookmark) => (
                 <div key={bookmark.id} className="bookmark-card">
                   <div className="flex justify-between items-start">
@@ -211,10 +222,11 @@ export default function BookmarkList({ user }) {
                     </div>
                     <button
                       onClick={() => deleteBookmark(bookmark.id)}
-                      className="btn-danger ml-4 flex-shrink-0"
+                      disabled={deletingId === bookmark.id}
+                      className="btn-danger ml-4 flex-shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
                       title="Delete bookmark"
                     >
-                      🗑️
+                      {deletingId === bookmark.id ? '...' : 'Delete'}
                     </button>
                   </div>
                 </div>
