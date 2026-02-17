@@ -26,7 +26,7 @@ export default function AuthComponent() {
           }}
           providers={['google']}
           onlyThirdPartyProviders={true}
-          redirectTo={`${typeof window !== 'undefined' ? window.location.origin : ''}/auth/callback`}
+          redirectTo="https://smart-bookmark-app-blush-eight.vercel.app/auth/callback"
         />
       </div>
     </div>
